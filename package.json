@@ -1,0 +1,38 @@
+{
+  "name": "pgdown",
+  "version": "1.0.0",
+  "description": "A LevelDOWN compatible postgres adapter",
+  "main": "index.js",
+  "scripts": {
+    "test": "node test",
+    "test-pouchdb-server": "SERVER_ARGS='--level-backend ../../.. --level-prefix riak://localhost:8087/' ./test-pouchdb.sh",
+    "test-pouchdb-client": "LEVEL_ADAPTER=../../.. LEVEL_PREFIX=riak://localhost:8087/ ./test-pouchdb.sh",
+    "test-pouchdb-both": "LEVEL_ADAPTER=../../.. LEVEL_PREFIX=riak://localhost:8087/ SERVER_ARGS='--level-backend ../../.. --level-prefix riak://localhost:8087/' ./test-pouchdb.sh"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/fritzy/pgdown.git"
+  },
+  "keywords": [
+    "level",
+    "leveldb",
+    "leveldown",
+    "levelup",
+    "postgres"
+  ],
+  "author": "Nathan Fritz <fritzy@netflint.net>",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/fritzy/pgdown/issues"
+  },
+  "homepage": "https://github.com/fritzy/pgdown",
+  "devDependencies": {
+    "precommit-hook": "^1.0.0",
+    "tape": "^2.12.3"
+  },
+  "dependencies": {
+    "abstract-leveldown": "^0.12.0",
+    "async": "^0.7.0",
+    "pg-query-stream": ""
+  }
+}
