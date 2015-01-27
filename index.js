@@ -2,7 +2,7 @@ var util = require('util');
 var url = require('url');
 var AbstractLevelDOWN = require('abstract-leveldown').AbstractLevelDOWN;
 var PgIterator = require('./iterator');
-var pg = require('pg');
+var pg = require('pg').native;
 var async = require('async');
 
 function toKey(key) {
@@ -10,30 +10,27 @@ function toKey(key) {
 }
 
 function PgDOWN(location) {
+    if (!location) {
+        location = module.default_connection;
+    }
     if (!(this instanceof PgDOWN)) return new PgDOWN(location);
 
     AbstractLevelDOWN.call(this, location);
 
     this._client = new pg.Client(location);
     this._bucket = 'default';
+    this._location = location;
 }
 
 util.inherits(PgDOWN, AbstractLevelDOWN);
 
 PgDOWN.destroy = function (location, callback) {
-    var parsed = url.parse(location);
-    var client = riakpbc.createClient({ host: parsed.hostname, port: parsed.port, parse_values: false });
-    var bucket = parsed.path.split('/')[1];
-
-    client.getKeys({ bucket: bucket }, function (err, res) {
-        async.each(res.keys ? res.keys : [], function (key, cb) {
-            client.del({ bucket: bucket, key: key }, cb);
-        }, callback);
-    });
 };
 
 PgDOWN.prototype._open = function (options, callback) {
+    console.log("cb", callback);
     this._client.connect(callback);
+    console.log("...");
 };
 
 PgDOWN.prototype._close = function (callback) {
@@ -44,49 +41,51 @@ PgDOWN.prototype._close = function (callback) {
     });
 };
 
-PgDOWN.prototype._bucketAndTable = function (options) {
+PgDOWN.prototype._bucketAndModel = function (options) {
     var bucket = options.bucket || this._bucket;
-    var table;
+    var model;
     var out = {};
     if (Array.isArray(bucket)) {
-        out.table = bucket[0];
+        out.model = bucket[0];
         out.bucket = bucket[1];
     } else {
-        out.table = bucket;
+        out.model = bucket;
         out.bucket = 'default';
     }
-    out.table = 'pgdown_' + out.table;
     return out;
 }
 
 PgDOWN.prototype._put = function (key, value, options, callback) {
-    var bucket = this._bucketAndTable(options);
+    var bucket = this._bucketAndModel(options);
 
     if (!options.indexes) {
         options.indexes = {};
     }
 
-    var query = "SELECT replace_pgdown_row2($1, $2, $3, $4, $5)";
+    var query = "SELECT pgdown_put($1, $2, $3, $4, $5)";
 
-    this._client.query(query, [bucket.table, bucket.bucket, key, value, options.indexes], callback);
+    this._client.query(query, [bucket.model, bucket.bucket, key, value, options.indexes], callback);
 
 };
 
 PgDOWN.prototype._get = function (key, options, callback) {
-    var bucket = this._bucketAndTable(options);
-    var query = util.format("SELECT (value::text) AS value from %s WHERE bucket=$1 AND key=$2", bucket.table);
-    this._client.query(query, [bucket.bucket, key], function (err, result) {
+    var bucket = this._bucketAndModel(options);
+    this._client.query("SELECT value from pgdown_keystore WHERE model=$1 AND bucket=$2 AND key=$3", [bucket.model, bucket.bucket, key], function (err, result) {
         if (result.rowCount > 0) {
-            callback(err, result.rows[0].value);
+            if (options.asBuffer === false) {
+                callback(err, result.rows[0].value.toString());
+            } else {
+                callback(err, result.rows[0].value);
+            }
         } else {
-            callback("Not found");
+            callback(new Error("NotFound"));
         }
     });
 };
 
 PgDOWN.prototype._del = function (key, options, callback) {
-    var bucket = this._bucketAndTalbe(options);
-    this._client.query("DELETE FROM $1 WHERE bucket=$2 AND key=$3", [bucket.table, bucket.bucket, key], function (err, results) {
+    var bucket = this._bucketAndModel(options);
+    this._client.query("DELETE FROM pgdown_keystore WHERE model=$1 AND bucket=$2 AND key=$3", [bucket.model, bucket.bucket, key], function (err, results) {
         callback(err);
     });
 };
@@ -105,8 +104,8 @@ PgDOWN.prototype._batch = function (array, options, callback) {
             this._client.query("COMMIT", function (err) {
                 callback(err);
             });
-        });
-    });
+        }.bind(this));
+    }.bind(this));
 };
 
 PgDOWN.prototype._iterator = function (options) {

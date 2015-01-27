@@ -1,79 +1,60 @@
-CREATE TABLE pgdown_default(key text, bucket text, value json, indexed json);
+DROP TABLE pgdown_keystore;
+CREATE TABLE pgdown_keystore(model text, key bytea, bucket text, value bytea, indexed json);
 
-CREATE OR REPLACE FUNCTION pgdown_replace_row(tname TEXT, bucket TEXT, key TEXT, value TEXT, indexed JSON) RETURNS VOID AS
+CREATE INDEX pgdown_keystore_model_bucket_key_idx ON pgdown_keystore (model, bucket, key);
+
+CREATE OR REPLACE FUNCTION pgdown_put(model TEXT, bucket TEXT, key TEXT, value TEXT, indexed JSON) RETURNS VOID AS
 $$
-BEGIN
-    LOOP
-        -- first try to update the key
-        EXECUTE 'UPDATE '
-        || quote_ident(tname)
-        || ' SET value = '
-        || quote_nullable(value)
-        || ', indexed = '
-        || quote_nullable(indexed)
-        || ' WHERE key = '
-        || quote_literal(key)
-        || ' AND bucket = '
-        || quote_literal(bucket);
-        IF found THEN
-            RAISE WARNING 'UPDATE % SET value = %, indexed = % WHERE key = % AND bucket = %', quote_ident(tname), quote_nullable(value), quote_nullable(indexed), quote_literal(key), quote_literal(bucket);
-            RETURN;
-        END IF;
-        -- not there, so try to insert the key
-        -- if someone else inserts the same key concurrently,
-        -- we could get a unique-key failure
-        BEGIN
-            EXECUTE 'INSERT INTO ' || quote_ident(tname) || ' (value, indexed, key, bucket) values ( ' || quote_nullable(value) || ', ' || quote_nullable(indexed) || ', ' || quote_literal(key) || ', ' || quote_literal(bucket) || ')';
-            RETURN;
-        EXCEPTION WHEN unique_violation THEN
-            -- Do nothing, and loop to try the UPDATE again.
-            RETURN;
-        END;
-    END LOOP;
-END;
+ BEGIN
+     LOOP
+         -- first try to update the key
+         EXECUTE format('UPDATE pgdown_keystore set value = %L, indexed = %L WHERE key = %L AND bucket = %L AND model = %L', value, indexed, key, bucket, model);
+         IF found THEN
+             RETURN;
+         END IF;
+         -- not there, so try to insert the key
+         -- if someone else inserts the same key concurrently,
+         -- we could get a unique-key failure
+         BEGIN
+             EXECUTE format('INSERT INTO pgdown_keystore (value, indexed, key, bucket, model) values (%L, %L, %L, %L, %L)', value, indexed, key, bucket, model);
+             RETURN;
+         EXCEPTION WHEN unique_violation THEN
+             -- Do nothing, and loop to try the UPDATE again.
+             RETURN;
+         END;
+     END LOOP;
+ END;
 $$
 LANGUAGE plpgsql;
 
 DROP FUNCTION pgdown_get_key_range(text,text,text,text,text,text,integer,text);
-CREATE FUNCTION pgdown_get_key_range(tname TEXT, bucket TEXT, lowop TEXT, low TEXT, highop TEXT, high TEXT, count INTEGER, ascdesc TEXT) RETURNS TABLE(key text, value text) AS
+CREATE FUNCTION pgdown_get_key_range(model TEXT, bucket TEXT, lowop TEXT, low TEXT, highop TEXT, high TEXT, count INTEGER, ascdesc TEXT) RETURNS TABLE(key text, value text) AS
 $BODY$
 DECLARE
-    querystr TEXT;
+querystr TEXT;
 BEGIN
-    querystr := 'SELECT key::text, value::text FROM '
-    || quote_ident(tname)
-    || ' WHERE bucket = ' || quote_literal(bucket)
-    || ' AND key ' || lowop || ' ' || quote_literal(low)
-    || ' AND key ' || highop || ' ' || quote_literal(high)
-    || ' ORDER BY key '
-    || ascdesc;
+    querystr := format('SELECT key, value FROM pgdown_keystore WHERE model = %L AND bucket = %L AND key %s %L AND key %s %L ORDER BY key %s', model, bucket, lowop, low, highop, high, ascdesc); 
     IF count > 0 THEN
-        querystr := querystr || ' LIMIT ' || quote_literal(count);
+        querystr := querystr || format(' LIMIT %L', count);
     END IF;
-    RETURN query
+    RETURN query 
     EXECUTE querystr;
-END;
+END; 
 $BODY$
 LANGUAGE plpgsql;
 
-DROP FUNCTION pgdown_get_index_range(text,text,text,text,text,text,text,integer,text);
-CREATE FUNCTION pgdown_get_range_index(tname TEXT, bucket TEXT, field TEXT, lowop TEXT, low TEXT, highop TEXT, high TEXT, count INTEGER, ascdesc TEXT) RETURNS TABLE(key text, value text) AS
+DROP FUNCTION pgdown_get_range_index(text,text,text,text,text,text,text,integer,text);
+CREATE FUNCTION pgdown_get_range_index(model TEXT, bucket TEXT, field TEXT, lowop TEXT, low TEXT, highop TEXT, high TEXT, count INTEGER, ascdesc TEXT) RETURNS TABLE(key text, value text) AS
 $BODY$
 DECLARE
-    querystr TEXT;
+querystr TEXT;
 BEGIN
-    querystr := 'SELECT key, value::text FROM '
-    || quote_ident(tname)
-    || ' WHERE bucket = ' || quote_literal(bucket)
-    || ' AND indexed->' || quote_literal(field) || ' ' || lowop || ' ' || quote_literal(low)
-    || ' AND indexed->'  || quote_literal(field) || ' ' || highop || ' ' || quote_literal(high)
-    || ' ORDER BY indexed->'|| quote_literal(field)
-    || ' ' || ascdesc;
+    querystr := format('SELECT key, value FROM pgdown_keystore WHERE model = %L AND indexed->%L %s %L AND indexed->%L %s %L ORDER BY indexed->%L %s', model, field, lowop, low, field, highop, high, field);
     IF count > 0 THEN
-        querystr := querystr || ' LIMIT ' || quote_literal(count);
+        querystr := querystr || format(' LIMIT %L', count);
     END IF;
-    return query
+    return query 
     EXECUTE querystr;
-END;
+END; 
 $BODY$
 LANGUAGE plpgsql;

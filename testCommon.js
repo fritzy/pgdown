@@ -1,48 +1,26 @@
 var dbidx = 0;
-var pg = require('pg').connect('pg://fritzy@localhost/fritzy');
+var pg = require('pg')
 var async = require('async');
 
 exports.location = function () {
-    return 'pg://fritzy@localhost/fritzy';
+    return 'pg://fritzy@localhost:5432/fritzy';
 };
 
 exports.lastLocation = function () {
-    return 'pg://localhost/fritzy';
+    return 'pg://localhost:5432/fritzy';
 };
 
 exports.cleanup = function (callback) {
-    pg.getBuckets(function (err, buckets) {
-        if (!buckets.buckets) buckets.buckets = [];
-        async.each(buckets.buckets, function (bucket, cb) {
-            if (!/^_db_test_/.test(bucket)) {
-                return cb();
-            }
-
-            pg.getKeys({ bucket: bucket }, function (err, reply) {
-                async.each(reply.keys ? reply.keys : [], function (key, icb) {
-                    pg.del({ bucket: bucket, key: key }, icb);
-                }, cb);
-            });
-        }, callback);
-    });
+    console.log("cleanup");
+    callback();
 };
 
 exports.setUp = function (t) {
-    pg.connect(function () {
-        exports.cleanup(function (err) {
-            t.notOk(err, 'cleanup returned an error');
-            t.end();
-        });
-    });
+    pg.connect('pg://fritzy@localhost:5432/fritzy', t.end);
 };
 
 exports.tearDown = function (t) {
-    exports.cleanup(function (err) {
-        t.notOk(err, 'cleanup returned an error');
-        pg.disconnect();
-        pg = require('pg').createClient();
-        t.end();
-    });
+    t.end();
 };
 
 exports.collectEntries = function (iterator, callback) {

@@ -2,6 +2,7 @@ var test = require('tape');
 var testCommon = require('./testCommon');
 var testBuffer = require('fs').readFileSync('./testdata.bin');
 var PgDOWN = require('./');
+PgDOWN.default_connection = "pg://fritzy@localhost:5432/fritzy";
 
 require('abstract-leveldown/abstract/leveldown-test').args(PgDOWN, test, testCommon);
 

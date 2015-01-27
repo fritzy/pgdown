@@ -10,7 +10,7 @@ function PgIterator(db, options) {
 
     options = JSON.parse(JSON.stringify(options));
 
-    this._bucket = db._bucketAndTable(options);
+    this._bucket = db._bucketAndModel(options);
     this._reverse = !!options.reverse;
     this._keyAsBuffer = !!options.keyAsBuffer;
     this._valueAsBuffer = !!options.valueAsBuffer;
@@ -69,8 +69,12 @@ function PgIterator(db, options) {
     }
 
     ///pgdown_get_range_key(tname TEXT, bucket TEXT, lowop TEXT, low TEXT, highop TEXT, high TEXT, count INTEGER, ascdesc TEXT)
-    console.log(util.format('SELECT pgdown_get_range_key("%s", "%s", "%s", "%s", "%s", "%s", "%s", "%s")', this._bucket.table, this._bucket.bucket, lowop, low, highop, high, options.limit, ascdesc));
-    this._results = db._client.query(new QueryStream('SELECT * FROM pgdown_get_range_key($1, $2, $3, $4, $5, $6, $7, $8)', [this._bucket.table, this._bucket.bucket, lowop, low, highop, high, options.limit, ascdesc]));
+    //console.log(util.format('SELECT pgdown_get_range_key("%s", "%s", "%s", "%s", "%s", "%s", "%s", "%s")', this._bucket.model, this._bucket.bucket, lowop, low, highop, high, options.limit, ascdesc));
+    if (options.hasOwnProperty('index')) {
+        this._results = db._client.query(new QueryStream('SELECT * FROM pgdown_get_range_index($1, $2, $3, $4, $5, $6, $7, $8, $9)', [this._bucket.model, this._bucket.bucket, options.index, lowop, low, highop, high, options.limit, ascdesc]));
+    } else {
+        this._results = db._client.query(new QueryStream('SELECT * FROM pgdown_get_key_range($1, $2, $3, $4, $5, $6, $7, $8)', [this._bucket.model, this._bucket.bucket, lowop, low, highop, high, options.limit, ascdesc]));
+    }
 
     this._results.once('end', function () {
         this._endEmitted = true;
@@ -84,16 +88,22 @@ PgIterator.prototype._next = function (callback) {
     var self = this;
 
     var onEnd = function () {
+        console.log('end');
         self._results.removeListener('readable', onReadable);
         callback();
     };
 
     var onReadable = function () {
+        console.log('readable');
         self._results.removeListener('end', onEnd);
         self._next(callback);
     };
 
-    var obj = this._results.read();
+    //console.log(this._results);
+    //var obj = this._results.read();
+    //var obj = this._results._result;
+    var obj = null;
+    console.log(this._results);
 
     if (self._endEmitted) {
         callback();
